@@ -1,5 +1,3 @@
-import os
-
 from fastapi.testclient import TestClient
 
 from app.searxng_client import RawHit
@@ -11,6 +9,16 @@ def test_health():
         resp = client.get("/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
+
+
+def test_test_page_served():
+    with TestClient(app) as client:
+        resp = client.get("/")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    # La page poste vers /search et porte un marqueur identifiable.
+    assert "Traillearn Search" in resp.text
+    assert "/search" in resp.text
 
 
 def test_search_returns_tavily_shape():

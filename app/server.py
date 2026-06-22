@@ -4,12 +4,14 @@ from contextlib import asynccontextmanager
 
 import httpx
 from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from app.config import Config, load_config
 from app.scraper import fetch_and_extract
 from app.search_handler import SearchRequest, handle_search
 from app.searxng_client import search_searxng
+from app.test_page import TEST_PAGE_HTML
 
 
 class SearchBody(BaseModel):
@@ -75,6 +77,12 @@ def _check_auth(cfg: Config, authorization: str | None) -> None:
     expected = f"Bearer {cfg.local_search_token}"
     if authorization != expected:
         raise HTTPException(status_code=401, detail="unauthorized")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def test_page() -> str:
+    """Banc de test graphique (même origine que /search → pas de CORS)."""
+    return TEST_PAGE_HTML
 
 
 @app.get("/health")
