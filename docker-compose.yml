@@ -6,13 +6,26 @@ services:
       - ./searxng:/etc/searxng:rw
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080/
+      # Injecte la vraie clé secrète sans modifier le fichier versionné.
+      # Définir SEARXNG_SECRET_KEY dans l'environnement de la VM (ou un .env).
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-change-me-in-production}
     # Pas de ports exposés : accessible uniquement via le réseau interne Docker.
+    healthcheck:
+      # /healthz : sonde de vivacité SearXNG. python est présent dans l'image searxng.
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
 
   traillearn-search:
     build: .
     restart: unless-stopped
     depends_on:
-      - searxng
+      # Attend que SearXNG soit SAIN (pas seulement démarré) — évite les résultats
+      # vides silencieux au démarrage à froid avant que SearXNG ne serve les requêtes.
+      searxng:
+        condition: service_healthy
     environment:
       - SEARXNG_URL=http://searxng:8080
       - SERVICE_PORT=8088
@@ -28,3 +41,4 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+      start_period: 10s
