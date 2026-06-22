@@ -1,16 +1,22 @@
 # Reverse proxy HTTPS pour Traillearn Search (Caddy).
-# Remplacez search.exemple.org par votre domaine (DNS A → IP de la VM).
-# TLS/Let's Encrypt automatique. Le service écoute sur 127.0.0.1:8088
-# (BIND_HOST par défaut) ; gardez-le ainsi — seul Caddy y accède.
+# Domaine : tavily.traillearn.org (DNS A → IP PUBLIQUE du serveur Caddy).
+# TLS/Let's Encrypt automatique.
 #
-# Lancement :
-#   docker run -d --name caddy --network host \
+# IMPORTANT — Caddy tourne sur un serveur SÉPARÉ du service :
+#   - Remplacez SERVICE_HOST par l'adresse du serveur qui héberge Traillearn
+#     Search (de préférence son IP PRIVÉE sur le VNet Azure, pas l'IP publique).
+#   - Le service doit écouter sur 0.0.0.0 (BIND_HOST=0.0.0.0 dans son .env) et
+#     son NSG doit autoriser le port 8088 DEPUIS l'IP du serveur Caddy uniquement.
+#   - Le saut Caddy → service est en HTTP clair : gardez-le sur le réseau privé
+#     (VNet) et activez LOCAL_SEARCH_TOKEN côté service (Caddy chiffre côté client
+#     mais n'authentifie pas les appels).
+#
+# Lancement (sur le serveur Caddy) :
+#   docker run -d --name caddy -p 80:80 -p 443:443 \
 #     -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile" \
 #     -v caddy_data:/data -v caddy_config:/config \
 #     caddy:2
-#
-# Pensez à activer LOCAL_SEARCH_TOKEN côté service (le proxy ne fait pas l'auth).
 
-search.exemple.org {
-    reverse_proxy 127.0.0.1:8088
+tavily.traillearn.org {
+    reverse_proxy SERVICE_HOST:8088
 }

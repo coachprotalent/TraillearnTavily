@@ -33,7 +33,7 @@ SearXNG (Docker, interne) → Google / Bing / DuckDuckGo
 - [Brancher le backend Traillearn](#brancher-le-backend-traillearn)
 - [Prompt d'intégration pour l'agent de dev Traillearn](#prompt-dintégration-pour-lagent-de-dev-traillearn)
 - [Page de test graphique](#page-de-test-graphique)
-- [Accès distant durable (reverse proxy HTTPS)](#accès-distant-durable-reverse-proxy-https)
+- [Accès distant durable (reverse proxy HTTPS avec Caddy)](#accès-distant-durable-reverse-proxy-https-avec-caddy)
 - [Développement local](#développement-local)
 - [Limitations connues](#limitations-connues)
 
@@ -55,7 +55,7 @@ curl -s http://127.0.0.1:8088/health        # → {"status":"ok"}
 |---|---|
 | Depuis la VM uniquement (sécurisé) | Tunnel SSH : `ssh -L 8088:127.0.0.1:8088 user@vm`, puis `http://127.0.0.1:8088/` |
 | Depuis un autre serveur/navigateur | `echo "BIND_HOST=0.0.0.0" >> .env` + activer un token, `docker compose up -d`, ouvrir le port 8088 (NSG Azure), puis `http://<IP_VM>:8088/` — voir [Page de test](#page-de-test-graphique) |
-| Accès durable + HTTPS | Reverse proxy → voir [Accès distant durable](#accès-distant-durable-reverse-proxy-https) |
+| Accès durable + HTTPS (`tavily.traillearn.org`) | Caddy sur un serveur séparé → voir [Accès distant durable](#accès-distant-durable-reverse-proxy-https-avec-caddy) |
 
 ---
 
@@ -286,72 +286,81 @@ Pour ouvrir l'interface depuis un autre serveur/navigateur, exposer le port :
 > ⚠️ **Sécurité.** Le service scrape des URLs arbitraires (risque SSRF) et n'a pas
 > de chiffrement TLS en propre. N'exposez `0.0.0.0` que le temps des tests, gardez
 > `LOCAL_SEARCH_TOKEN` activé, restreignez le NSG à l'IP du testeur, et repassez à
-> `BIND_HOST=127.0.0.1` ensuite. Pour un accès durable, placez plutôt un reverse
-> proxy HTTPS (Caddy/Nginx) devant le service.
+> `BIND_HOST=127.0.0.1` ensuite. Pour un accès durable, utilisez plutôt Caddy en
+> HTTPS — voir [Accès distant durable](#accès-distant-durable-reverse-proxy-https-avec-caddy).
 
 ---
 
-## Accès distant durable (reverse proxy HTTPS)
+## Accès distant durable (reverse proxy HTTPS avec Caddy)
 
-Pour un accès distant **permanent et chiffré** (plutôt qu'un `BIND_HOST=0.0.0.0`
-temporaire), placez un reverse proxy TLS devant le service. Gardez le service lié à
-`127.0.0.1` (le défaut) : seul le proxy y accède, sur la même machine.
+Accès permanent et chiffré via **Caddy** (HTTPS/Let's Encrypt automatique) sur le
+domaine **`tavily.traillearn.org`**.
 
-Prérequis : un nom de domaine pointant vers la VM (enregistrement DNS A) et les
-ports **80/443** ouverts dans le NSG Azure. Des configs prêtes à l'emploi sont
-fournies dans [`deploy/`](deploy/).
+**Topologie retenue : Caddy tourne sur un serveur SÉPARÉ du service.** Caddy joint
+donc le service par le réseau (pas en `127.0.0.1`). Le service doit écouter sur
+`0.0.0.0` et n'autoriser que le serveur Caddy.
 
-### Caddy (le plus simple — HTTPS/Let's Encrypt automatique)
+```
+Navigateur ──HTTPS──▶ Serveur Caddy (tavily.traillearn.org, 443)
+                          │  HTTP (réseau privé VNet)
+                          ▼
+                      Serveur du service  (Traillearn Search, :8088)
+```
 
-`deploy/Caddyfile` :
+### 1. DNS
+
+Créer un enregistrement **A** `tavily.traillearn.org` → **IP publique du serveur
+Caddy**.
+
+### 2. Côté serveur du service
+
+Exposer le port et activer l'auth (le saut Caddy→service est en HTTP clair) :
+```bash
+# dans le .env du service
+echo "BIND_HOST=0.0.0.0" >> .env
+echo "LOCAL_SEARCH_TOKEN=$(openssl rand -hex 24)" >> .env
+docker compose up -d
+```
+Ouvrir le port 8088 **uniquement depuis le serveur Caddy** dans le NSG Azure
+(idéalement via l'IP privée VNet) :
+```bash
+az network nsg rule create \
+  --resource-group <RG> --nsg-name <NSG_DU_SERVICE> \
+  --name allow-caddy --priority 320 \
+  --access Allow --protocol Tcp --direction Inbound \
+  --destination-port-ranges 8088 \
+  --source-address-prefixes <IP_DU_SERVEUR_CADDY>/32
+```
+
+### 3. Côté serveur Caddy
+
+`deploy/Caddyfile` (remplacer `SERVICE_HOST` par l'IP — de préférence privée VNet —
+du serveur du service) :
 ```caddy
-search.exemple.org {
-    # TLS automatique (Let's Encrypt). Remplacez par votre domaine.
-    reverse_proxy 127.0.0.1:8088
+tavily.traillearn.org {
+    reverse_proxy SERVICE_HOST:8088
 }
 ```
-Lancement :
+Ports **80/443** ouverts dans le NSG du serveur Caddy, puis :
 ```bash
-# Le service écoute déjà sur 127.0.0.1:8088 (BIND_HOST par défaut).
-docker run -d --name caddy --network host \
+docker run -d --name caddy -p 80:80 -p 443:443 \
   -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile" \
   -v caddy_data:/data -v caddy_config:/config \
   caddy:2
 ```
-→ `https://search.exemple.org/` est servi avec un certificat valide, sans config TLS
-manuelle. Pensez à activer `LOCAL_SEARCH_TOKEN` (le proxy ne fait pas l'auth).
+→ `https://tavily.traillearn.org/` est servi avec un certificat valide, sans config
+TLS manuelle.
 
-### Nginx (si vous gérez déjà Nginx + certbot)
+### 4. Utiliser
 
-`deploy/nginx.conf.example` :
-```nginx
-server {
-    listen 443 ssl;
-    server_name search.exemple.org;
+- Interface de test : `https://tavily.traillearn.org/` (saisir le token dans le
+  champ **Bearer token**).
+- Backend Traillearn : `TAVILY_URL=https://tavily.traillearn.org/search` et
+  `TAVILY_API_KEY=<valeur de LOCAL_SEARCH_TOKEN>`.
 
-    ssl_certificate     /etc/letsencrypt/live/search.exemple.org/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/search.exemple.org/privkey.pem;
-
-    location / {
-        proxy_pass         http://127.0.0.1:8088;
-        proxy_set_header   Host              $host;
-        proxy_set_header   X-Real-IP         $remote_addr;
-        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
-        proxy_set_header   X-Forwarded-Proto $scheme;
-        proxy_read_timeout 60s;   # le scraping peut prendre quelques secondes
-    }
-}
-server {                       # redirige HTTP → HTTPS
-    listen 80;
-    server_name search.exemple.org;
-    return 301 https://$host$request_uri;
-}
-```
-Certificat : `sudo certbot --nginx -d search.exemple.org`, puis `sudo nginx -s reload`.
-
-> Avec un reverse proxy, **gardez `BIND_HOST=127.0.0.1`** et n'ouvrez que 80/443 au
-> public. Activez `LOCAL_SEARCH_TOKEN` : le proxy chiffre le transport mais
-> n'authentifie pas les appels.
+> ⚠️ Le saut Caddy → service n'est pas chiffré : gardez-le sur le réseau privé
+> (VNet), restreignez le NSG du service à l'IP du serveur Caddy, et laissez
+> `LOCAL_SEARCH_TOKEN` activé (Caddy chiffre côté client mais n'authentifie pas).
 
 ---
 
@@ -380,7 +389,7 @@ app/
   server.py          # API FastAPI (/search, /health, /)
   test_page.py       # page de test HTML
 tests/               # suite pytest (21 tests)
-deploy/              # configs reverse proxy HTTPS (Caddy, Nginx)
+deploy/              # config reverse proxy HTTPS (Caddyfile)
 docs/                # spec, plan, guides d'exploitation
 ```
 
