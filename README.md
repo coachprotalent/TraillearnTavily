@@ -353,22 +353,35 @@ az network nsg rule create \
 
 ### 3. Côté serveur Caddy
 
-`deploy/Caddyfile` (remplacer `SERVICE_HOST` par l'IP — de préférence privée VNet —
-du serveur du service) :
+Installer Caddy **en paquet système** (Debian/Ubuntu — service `systemd` géré
+automatiquement) :
+```bash
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+  | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+  | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+sudo apt update && sudo apt install -y caddy
+```
+
+Écrire la config dans `/etc/caddy/Caddyfile` (remplacer `SERVICE_HOST` par l'IP —
+de préférence privée VNet — du serveur du service) :
 ```caddy
 tavily.traillearn.org {
     reverse_proxy SERVICE_HOST:8088
 }
 ```
-Ports **80/443** ouverts dans le NSG du serveur Caddy, puis :
+(Le dépôt fournit ce contenu dans [`deploy/Caddyfile`](deploy/Caddyfile) — vous
+pouvez le copier : `sudo cp deploy/Caddyfile /etc/caddy/Caddyfile` puis l'éditer.)
+
+Ouvrir les ports **80/443** dans le NSG du serveur Caddy, valider la config et
+(re)charger le service :
 ```bash
-docker run -d --name caddy -p 80:80 -p 443:443 \
-  -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile" \
-  -v caddy_data:/data -v caddy_config:/config \
-  caddy:2
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy        # ou: sudo systemctl enable --now caddy au 1er lancement
 ```
-→ `https://tavily.traillearn.org/` est servi avec un certificat valide, sans config
-TLS manuelle.
+→ `https://tavily.traillearn.org/` est servi avec un certificat valide (Let's
+Encrypt automatique), sans config TLS manuelle. Logs : `journalctl -u caddy -f`.
 
 ### 4. Utiliser
 

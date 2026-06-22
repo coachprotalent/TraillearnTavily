@@ -11,11 +11,11 @@
 #     (VNet) et activez LOCAL_SEARCH_TOKEN côté service (Caddy chiffre côté client
 #     mais n'authentifie pas les appels).
 #
-# Lancement (sur le serveur Caddy) :
-#   docker run -d --name caddy -p 80:80 -p 443:443 \
-#     -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile" \
-#     -v caddy_data:/data -v caddy_config:/config \
-#     caddy:2
+# Installation (Caddy en paquet système, sur le serveur Caddy) :
+#   sudo cp deploy/Caddyfile /etc/caddy/Caddyfile   # puis remplacer SERVICE_HOST
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy   # ou: sudo systemctl enable --now caddy (1er lancement)
+# Logs : journalctl -u caddy -f
 
 tavily.traillearn.org {
     reverse_proxy SERVICE_HOST:8088
