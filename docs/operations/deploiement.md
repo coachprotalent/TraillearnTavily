@@ -31,23 +31,23 @@ rsync -av --exclude .venv --exclude .git ./TraillearnTavily/ user@vm:/opt/traill
 
 ## 3. Configurer la clé secrète SearXNG
 
-SearXNG exige une `secret_key` aléatoire en production. Elle est injectée par
-variable d'environnement (le fichier versionné ne contient qu'un placeholder) :
+SearXNG **refuse de démarrer** tant que sa `secret_key` vaut la valeur par défaut
+`ultrasecretkey`. Comme on monte notre propre `settings.yml`, l'image ne la
+remplace pas automatiquement — on écrit une vraie clé aléatoire dans le fichier :
 
 ```bash
 cd /opt/traillearn-search
-echo "SEARXNG_SECRET_KEY=$(openssl rand -hex 32)" > .env
+sed -i "s/ultrasecretkey/$(openssl rand -hex 32)/" searxng/settings.yml
 ```
 
-> Le `docker-compose.yml` lit `${SEARXNG_SECRET_KEY:-change-me-in-production}` ;
-> le `.env` ci-dessus fournit la vraie valeur. `.env` est ignoré par git.
+> ⚠️ `git pull` (mise à jour) réinitialise `searxng/settings.yml` : relancer cette
+> commande après chaque `git pull`. Vérifier : `grep secret_key searxng/settings.yml`.
 
-(Optionnel) Pour exiger un Bearer token sur `/search`, ajouter au même `.env` :
+(Optionnel) Pour exiger un Bearer token sur `/search` — le `docker-compose.yml` lit
+déjà `LOCAL_SEARCH_TOKEN` depuis `.env`, rien d'autre à éditer :
 ```bash
 echo "LOCAL_SEARCH_TOKEN=$(openssl rand -hex 24)" >> .env
 ```
-et décommenter la ligne `LOCAL_SEARCH_TOKEN=` du service dans `docker-compose.yml`
-(la passer en `- LOCAL_SEARCH_TOKEN=${LOCAL_SEARCH_TOKEN}`).
 
 ## 4. Démarrer la stack
 

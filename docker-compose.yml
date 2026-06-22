@@ -1,14 +1,15 @@
 services:
   searxng:
-    image: searxng/searxng:latest
+    # Version épinglée (pas `latest`) pour des déploiements reproductibles.
+    image: searxng/searxng:2026.6.22-952896d29
     restart: unless-stopped
     volumes:
       - ./searxng:/etc/searxng:rw
     environment:
       - SEARXNG_BASE_URL=http://localhost:8080/
-      # Injecte la vraie clé secrète sans modifier le fichier versionné.
-      # Définir SEARXNG_SECRET_KEY dans l'environnement de la VM (ou un .env).
-      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:-change-me-in-production}
+      # NB : la clé secrète n'est PAS injectée par variable d'env. Quand on monte
+      # notre propre settings.yml, l'image ne substitue pas le placeholder. La vraie
+      # clé est écrite DANS searxng/settings.yml au déploiement (voir README §3).
     # Pas de ports exposés : accessible uniquement via le réseau interne Docker.
     healthcheck:
       # /healthz : sonde de vivacité SearXNG. python est présent dans l'image searxng.

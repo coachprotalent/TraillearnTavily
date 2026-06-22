@@ -35,6 +35,7 @@ SearXNG (Docker, interne) → Google / Bing / DuckDuckGo
 - [Page de test graphique](#page-de-test-graphique)
 - [Accès distant durable (reverse proxy HTTPS avec Caddy)](#accès-distant-durable-reverse-proxy-https-avec-caddy)
 - [Développement local](#développement-local)
+- [Dépannage](#dépannage)
 - [Limitations connues](#limitations-connues)
 
 ---
@@ -44,7 +45,8 @@ SearXNG (Docker, interne) → Google / Bing / DuckDuckGo
 ```bash
 git clone https://github.com/coachprotalent/TraillearnTavily.git
 cd TraillearnTavily
-echo "SEARXNG_SECRET_KEY=$(openssl rand -hex 32)" > .env
+# Clé secrète SearXNG OBLIGATOIRE — écrite dans le settings.yml monté :
+sed -i "s/ultrasecretkey/$(openssl rand -hex 32)/" searxng/settings.yml
 docker compose up -d --build
 curl -s http://127.0.0.1:8088/health        # → {"status":"ok"}
 ```
@@ -99,10 +101,16 @@ cd /opt/traillearn-search
 
 ### 3. Configurer les secrets
 
-SearXNG exige une clé secrète aléatoire (injectée par env, pas dans le fichier versionné) :
+**Clé secrète SearXNG (obligatoire).** SearXNG refuse de démarrer tant que la clé
+vaut la valeur par défaut `ultrasecretkey`. Comme on monte notre propre
+`settings.yml`, l'image ne la remplace pas automatiquement : on écrit une vraie clé
+aléatoire dans le fichier monté.
 ```bash
-echo "SEARXNG_SECRET_KEY=$(openssl rand -hex 32)" > .env
+sed -i "s/ultrasecretkey/$(openssl rand -hex 32)/" searxng/settings.yml
 ```
+
+> ⚠️ `git pull` (étape 6) réinitialise `searxng/settings.yml` au placeholder :
+> relancer cette commande `sed` après chaque mise à jour, ou `git stash` la modif.
 
 (Optionnel) Pour exiger un Bearer token sur `/search` — le `docker-compose.yml`
 lit déjà cette valeur depuis `.env`, rien d'autre à éditer :
@@ -134,7 +142,10 @@ curl -s -X POST http://127.0.0.1:8088/search \
 ### 6. Mettre à jour
 
 ```bash
-cd /opt/traillearn-search && git pull && docker compose up -d --build
+cd /opt/traillearn-search && git pull
+# git pull réinitialise settings.yml → réinjecter la clé secrète :
+sed -i "s/ultrasecretkey/$(openssl rand -hex 32)/" searxng/settings.yml
+docker compose up -d --build
 ```
 
 ### Exploitation
@@ -155,7 +166,6 @@ Définies dans `docker-compose.yml` (et/ou `.env`). Toutes ont une valeur par d�
 
 | Variable | Défaut | Rôle |
 |---|---|---|
-| `SEARXNG_SECRET_KEY` | `change-me-in-production` | **À définir en prod** (`.env`). Clé secrète SearXNG, injectée dans `settings.yml` au démarrage. |
 | `SEARXNG_URL` | `http://searxng:8080` | URL interne de SearXNG (réseau Docker). |
 | `SERVICE_PORT` | `8088` | Port d'écoute du service. |
 | `BIND_HOST` | `127.0.0.1` | Interface du mapping de port hôte. `127.0.0.1` = accessible seulement depuis la VM ; `0.0.0.0` = exposé à d'autres machines (tests navigateur distant). |
@@ -164,6 +174,9 @@ Définies dans `docker-compose.yml` (et/ou `.env`). Toutes ont une valeur par d�
 | `SCRAPE_FETCH_TIMEOUT_MS` | `15000` | Timeout de fetch par page (ms). |
 | `SCRAPE_MAX_CHARS` | `20000` | Troncature du contenu extrait (caractères). |
 | `SCRAPE_ALLOW_INSECURE_TLS` | `true` | Tolérance aux certificats TLS invalides lors du scraping. |
+
+> La **clé secrète SearXNG** n'est pas une variable d'env : elle se définit dans
+> `searxng/settings.yml` (cf. [déploiement §3](#3-configurer-les-secrets)).
 
 ### Projet Traillearn (pour basculer vers le service local)
 
@@ -392,6 +405,28 @@ tests/               # suite pytest (21 tests)
 deploy/              # config reverse proxy HTTPS (Caddyfile)
 docs/                # spec, plan, guides d'exploitation
 ```
+
+---
+
+## Dépannage
+
+**SearXNG redémarre en boucle ; `curl http://127.0.0.1:8088/health` → connection
+refused.** Logs SearXNG :
+```
+ERROR:searx.webapp: server.secret_key is not changed. Please use something else instead of ultrasecretkey.
+```
+Cause : la clé secrète n'a pas été remplacée dans le `settings.yml` monté (l'image
+ne substitue pas le placeholder pour un fichier monté). `traillearn-search` reste
+en `Created` car il attend que SearXNG soit `healthy`.
+
+Correctif :
+```bash
+cd /opt/traillearn-search   # ou votre dossier de déploiement
+sed -i "s/ultrasecretkey/$(openssl rand -hex 32)/" searxng/settings.yml
+docker compose up -d
+docker compose ps           # searxng doit passer "healthy", puis le service démarre
+```
+Vérifier qu'il ne reste plus `ultrasecretkey` : `grep secret_key searxng/settings.yml`.
 
 ---
 
