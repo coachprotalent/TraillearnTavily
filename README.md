@@ -148,6 +148,12 @@ sed -i "s/ultrasecretkey/$(openssl rand -hex 32)/" searxng/settings.yml
 docker compose up -d --build
 ```
 
+> L'image SearXNG est **épinglée** dans `docker-compose.yml`
+> (`searxng/searxng:2026.6.22-952896d29`) pour des déploiements reproductibles —
+> pas de `latest`. Pour la faire évoluer, changer ce tag (voir les versions
+> disponibles sur le [Docker Hub de SearXNG](https://hub.docker.com/r/searxng/searxng/tags)),
+> puis `docker compose pull searxng && docker compose up -d`.
+
 ### Exploitation
 
 ```bash
