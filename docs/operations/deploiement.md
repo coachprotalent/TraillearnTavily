@@ -79,12 +79,25 @@ curl -s -X POST http://127.0.0.1:8088/search \
   -d '{"query":"bourses études France","max_results":3}' | head -c 800
 ```
 
-**Page de test graphique** : `http://127.0.0.1:8088/`. La VM n'exposant pas ce
-port publiquement, ouvrez-la via un tunnel SSH depuis votre poste :
-```bash
-ssh -L 8088:127.0.0.1:8088 user@vm
-# puis dans le navigateur du poste : http://127.0.0.1:8088/
-```
+**Page de test graphique** : `http://127.0.0.1:8088/`.
+
+- **Accès sécurisé (recommandé)** — tunnel SSH depuis votre poste :
+  ```bash
+  ssh -L 8088:127.0.0.1:8088 user@vm
+  # puis dans le navigateur du poste : http://127.0.0.1:8088/
+  ```
+- **Accès depuis un autre serveur/navigateur** — exposer le port :
+  ```bash
+  echo "BIND_HOST=0.0.0.0" >> .env
+  echo "LOCAL_SEARCH_TOKEN=$(openssl rand -hex 24)" >> .env   # active l'auth
+  docker compose up -d
+  ```
+  puis ouvrir le port 8088 dans le **NSG / pare-feu Azure** (de préférence
+  restreint à l'IP du serveur de test), et ouvrir `http://<IP_PUBLIQUE_VM>:8088/`
+  en saisissant le token dans le champ « Bearer token » de la page.
+  ⚠️ N'exposez `0.0.0.0` que le temps des tests (risque SSRF, pas de TLS propre) ;
+  repassez ensuite à `BIND_HOST=127.0.0.1`. Pour un accès durable, mettre un
+  reverse proxy HTTPS devant le service.
 
 ## 6. Brancher le backend Traillearn
 

@@ -137,7 +137,8 @@ Définies dans `docker-compose.yml` (et/ou `.env`). Toutes ont une valeur par d�
 | `SEARXNG_SECRET_KEY` | `change-me-in-production` | **À définir en prod** (`.env`). Clé secrète SearXNG, injectée dans `settings.yml` au démarrage. |
 | `SEARXNG_URL` | `http://searxng:8080` | URL interne de SearXNG (réseau Docker). |
 | `SERVICE_PORT` | `8088` | Port d'écoute du service. |
-| `LOCAL_SEARCH_TOKEN` | _(vide)_ | Si défini, exige `Authorization: Bearer <token>` sur `/search` ; sinon auth ignorée. |
+| `BIND_HOST` | `127.0.0.1` | Interface du mapping de port hôte. `127.0.0.1` = accessible seulement depuis la VM ; `0.0.0.0` = exposé à d'autres machines (tests navigateur distant). |
+| `LOCAL_SEARCH_TOKEN` | _(vide)_ | Si défini, exige `Authorization: Bearer <token>` sur `/search` ; sinon auth ignorée. **Recommandé si `BIND_HOST=0.0.0.0`.** |
 | `SCRAPE_CONCURRENCY` | `5` | Pages scrapées en parallèle par requête. |
 | `SCRAPE_FETCH_TIMEOUT_MS` | `15000` | Timeout de fetch par page (ms). |
 | `SCRAPE_MAX_CHARS` | `20000` | Troncature du contenu extrait (caractères). |
@@ -230,11 +231,42 @@ intégrer le changement dans la branche principale.
 Une page web autonome est servie sur `GET /` (même origine que `/search`, donc pas
 de CORS). Elle permet de lancer des requêtes et de visualiser les résultats.
 
-La VM n'exposant pas le port publiquement, ouvrez-la via un tunnel SSH :
+### Option A — sans exposer le port (sécurisé, recommandé)
+
+Tunnel SSH depuis votre poste :
 ```bash
 ssh -L 8088:127.0.0.1:8088 user@vm
 # puis dans le navigateur : http://127.0.0.1:8088/
 ```
+
+### Option B — exposer le service à d'autres machines (tests navigateur distant)
+
+Pour ouvrir l'interface depuis un autre serveur/navigateur, exposer le port :
+
+1. **Activer l'auth** et **exposer** dans `.env` :
+   ```bash
+   echo "BIND_HOST=0.0.0.0" >> .env
+   echo "LOCAL_SEARCH_TOKEN=$(openssl rand -hex 24)" >> .env
+   ```
+2. Redémarrer : `docker compose up -d`
+3. **Ouvrir le port 8088 dans le NSG / pare-feu Azure**, idéalement restreint à
+   l'IP du serveur de test :
+   ```bash
+   az network nsg rule create \
+     --resource-group <RG> --nsg-name <NSG> \
+     --name allow-traillearn-search --priority 320 \
+     --access Allow --protocol Tcp --direction Inbound \
+     --destination-port-ranges 8088 \
+     --source-address-prefixes <IP_DU_SERVEUR_DE_TEST>/32
+   ```
+4. Dans le navigateur : `http://<IP_PUBLIQUE_VM>:8088/` — saisir le token dans le
+   champ **Bearer token** de la page.
+
+> ⚠️ **Sécurité.** Le service scrape des URLs arbitraires (risque SSRF) et n'a pas
+> de chiffrement TLS en propre. N'exposez `0.0.0.0` que le temps des tests, gardez
+> `LOCAL_SEARCH_TOKEN` activé, restreignez le NSG à l'IP du testeur, et repassez à
+> `BIND_HOST=127.0.0.1` ensuite. Pour un accès durable, placez plutôt un reverse
+> proxy HTTPS (Caddy/Nginx) devant le service.
 
 ---
 
