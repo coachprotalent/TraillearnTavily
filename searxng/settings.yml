@@ -1,0 +1,13 @@
+# Configuration minimale SearXNG : active la sortie JSON (indispensable pour l'API).
+# `secret_key` DOIT être remplacée par une valeur aléatoire en production.
+use_default_settings: true
+
+server:
+  secret_key: "change-me-in-production"
+  limiter: false
+  image_proxy: false
+
+search:
+  formats:
+    - html
+    - json

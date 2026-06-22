@@ -1,0 +1,30 @@
+services:
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+    # Pas de ports exposés : accessible uniquement via le réseau interne Docker.
+
+  traillearn-search:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - searxng
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+      - SERVICE_PORT=8088
+      - SCRAPE_CONCURRENCY=5
+      - SCRAPE_FETCH_TIMEOUT_MS=15000
+      - SCRAPE_MAX_CHARS=20000
+      - SCRAPE_ALLOW_INSECURE_TLS=true
+      # - LOCAL_SEARCH_TOKEN=   # décommenter pour exiger un Bearer
+    ports:
+      - "127.0.0.1:8088:8088"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8088/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
