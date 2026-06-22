@@ -142,3 +142,9 @@ docker compose logs --tail=100 searxng     # logs SearXNG
   côté Traillearn) dans une itération ultérieure.
 - Si l'IP de la VM se fait limiter par les moteurs (volume élevé), envisager une
   VM/IP dédiée pour SearXNG.
+- **SSRF (risque résiduel assumé)** : le service scrape les URLs renvoyées par
+  SearXNG sans filtrage d'hôte/IP (avec suivi de redirections). Une source
+  malveillante pourrait pointer vers une adresse interne (ex. endpoint de
+  métadonnées cloud `169.254.169.254`). Acceptable car le service est interne et
+  ce comportement reflète l'existant Traillearn ; pour durcir, bloquer les plages
+  link-local/privées côté scraper dans une itération ultérieure.

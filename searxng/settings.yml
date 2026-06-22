@@ -1,9 +1,12 @@
 # Configuration minimale SearXNG : active la sortie JSON (indispensable pour l'API).
-# `secret_key` DOIT être remplacée par une valeur aléatoire en production.
+# `secret_key` : laisser le SENTINEL `ultrasecretkey` — l'entrypoint de l'image
+# searxng le remplace par la valeur de l'env SEARXNG_SECRET_KEY au démarrage
+# (cf. docker-compose.yml + .env). Ne PAS mettre une autre chaîne ici, sinon la
+# substitution ne se déclenche pas et la clé reste celle, publique, du fichier.
 use_default_settings: true
 
 server:
-  secret_key: "change-me-in-production"
+  secret_key: "ultrasecretkey"
   limiter: false
   image_proxy: false
 

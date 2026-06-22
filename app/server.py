@@ -118,7 +118,11 @@ def main() -> None:
     import uvicorn
 
     cfg = load_config()
-    uvicorn.run(app, host="0.0.0.0", port=cfg.service_port)
+    # host=0.0.0.0 est requis DANS le conteneur pour que le mapping de port Docker
+    # fonctionne. L'exposition reste limitée à localhost par le compose
+    # (`127.0.0.1:8088:8088`), pas par l'app. Hors Docker, restreindre via un reverse
+    # proxy ou activer LOCAL_SEARCH_TOKEN.
+    uvicorn.run(app, host="0.0.0.0", port=cfg.service_port)  # noqa: S104
 
 
 if __name__ == "__main__":
