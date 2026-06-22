@@ -26,14 +26,36 @@ SearXNG (Docker, interne) → Google / Bing / DuckDuckGo
 
 ## Sommaire
 
+- [Démarrage rapide](#démarrage-rapide)
 - [Contrat HTTP](#contrat-http)
 - [Procédure de déploiement (VM)](#procédure-de-déploiement-vm)
 - [Variables d'environnement](#variables-denvironnement)
 - [Brancher le backend Traillearn](#brancher-le-backend-traillearn)
 - [Prompt d'intégration pour l'agent de dev Traillearn](#prompt-dintégration-pour-lagent-de-dev-traillearn)
 - [Page de test graphique](#page-de-test-graphique)
+- [Accès distant durable (reverse proxy HTTPS)](#accès-distant-durable-reverse-proxy-https)
 - [Développement local](#développement-local)
 - [Limitations connues](#limitations-connues)
+
+---
+
+## Démarrage rapide
+
+```bash
+git clone https://github.com/coachprotalent/TraillearnTavily.git
+cd TraillearnTavily
+echo "SEARXNG_SECRET_KEY=$(openssl rand -hex 32)" > .env
+docker compose up -d --build
+curl -s http://127.0.0.1:8088/health        # → {"status":"ok"}
+```
+
+**Ouvrir l'interface graphique de test :**
+
+| Besoin | Comment |
+|---|---|
+| Depuis la VM uniquement (sécurisé) | Tunnel SSH : `ssh -L 8088:127.0.0.1:8088 user@vm`, puis `http://127.0.0.1:8088/` |
+| Depuis un autre serveur/navigateur | `echo "BIND_HOST=0.0.0.0" >> .env` + activer un token, `docker compose up -d`, ouvrir le port 8088 (NSG Azure), puis `http://<IP_VM>:8088/` — voir [Page de test](#page-de-test-graphique) |
+| Accès durable + HTTPS | Reverse proxy → voir [Accès distant durable](#accès-distant-durable-reverse-proxy-https) |
 
 ---
 
@@ -82,12 +104,11 @@ SearXNG exige une clé secrète aléatoire (injectée par env, pas dans le fichi
 echo "SEARXNG_SECRET_KEY=$(openssl rand -hex 32)" > .env
 ```
 
-(Optionnel) Pour exiger un Bearer token sur `/search` :
+(Optionnel) Pour exiger un Bearer token sur `/search` — le `docker-compose.yml`
+lit déjà cette valeur depuis `.env`, rien d'autre à éditer :
 ```bash
 echo "LOCAL_SEARCH_TOKEN=$(openssl rand -hex 24)" >> .env
 ```
-…et passer la ligne du service dans `docker-compose.yml` à
-`- LOCAL_SEARCH_TOKEN=${LOCAL_SEARCH_TOKEN}`.
 
 ### 4. Démarrer
 
@@ -270,6 +291,70 @@ Pour ouvrir l'interface depuis un autre serveur/navigateur, exposer le port :
 
 ---
 
+## Accès distant durable (reverse proxy HTTPS)
+
+Pour un accès distant **permanent et chiffré** (plutôt qu'un `BIND_HOST=0.0.0.0`
+temporaire), placez un reverse proxy TLS devant le service. Gardez le service lié à
+`127.0.0.1` (le défaut) : seul le proxy y accède, sur la même machine.
+
+Prérequis : un nom de domaine pointant vers la VM (enregistrement DNS A) et les
+ports **80/443** ouverts dans le NSG Azure. Des configs prêtes à l'emploi sont
+fournies dans [`deploy/`](deploy/).
+
+### Caddy (le plus simple — HTTPS/Let's Encrypt automatique)
+
+`deploy/Caddyfile` :
+```caddy
+search.exemple.org {
+    # TLS automatique (Let's Encrypt). Remplacez par votre domaine.
+    reverse_proxy 127.0.0.1:8088
+}
+```
+Lancement :
+```bash
+# Le service écoute déjà sur 127.0.0.1:8088 (BIND_HOST par défaut).
+docker run -d --name caddy --network host \
+  -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile" \
+  -v caddy_data:/data -v caddy_config:/config \
+  caddy:2
+```
+→ `https://search.exemple.org/` est servi avec un certificat valide, sans config TLS
+manuelle. Pensez à activer `LOCAL_SEARCH_TOKEN` (le proxy ne fait pas l'auth).
+
+### Nginx (si vous gérez déjà Nginx + certbot)
+
+`deploy/nginx.conf.example` :
+```nginx
+server {
+    listen 443 ssl;
+    server_name search.exemple.org;
+
+    ssl_certificate     /etc/letsencrypt/live/search.exemple.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/search.exemple.org/privkey.pem;
+
+    location / {
+        proxy_pass         http://127.0.0.1:8088;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 60s;   # le scraping peut prendre quelques secondes
+    }
+}
+server {                       # redirige HTTP → HTTPS
+    listen 80;
+    server_name search.exemple.org;
+    return 301 https://$host$request_uri;
+}
+```
+Certificat : `sudo certbot --nginx -d search.exemple.org`, puis `sudo nginx -s reload`.
+
+> Avec un reverse proxy, **gardez `BIND_HOST=127.0.0.1`** et n'ouvrez que 80/443 au
+> public. Activez `LOCAL_SEARCH_TOKEN` : le proxy chiffre le transport mais
+> n'authentifie pas les appels.
+
+---
+
 ## Développement local
 
 ```bash
@@ -295,6 +380,7 @@ app/
   server.py          # API FastAPI (/search, /health, /)
   test_page.py       # page de test HTML
 tests/               # suite pytest (21 tests)
+deploy/              # configs reverse proxy HTTPS (Caddy, Nginx)
 docs/                # spec, plan, guides d'exploitation
 ```
 

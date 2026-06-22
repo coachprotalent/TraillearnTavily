@@ -1,0 +1,16 @@
+# Reverse proxy HTTPS pour Traillearn Search (Caddy).
+# Remplacez search.exemple.org par votre domaine (DNS A → IP de la VM).
+# TLS/Let's Encrypt automatique. Le service écoute sur 127.0.0.1:8088
+# (BIND_HOST par défaut) ; gardez-le ainsi — seul Caddy y accède.
+#
+# Lancement :
+#   docker run -d --name caddy --network host \
+#     -v "$PWD/deploy/Caddyfile:/etc/caddy/Caddyfile" \
+#     -v caddy_data:/data -v caddy_config:/config \
+#     caddy:2
+#
+# Pensez à activer LOCAL_SEARCH_TOKEN côté service (le proxy ne fait pas l'auth).
+
+search.exemple.org {
+    reverse_proxy 127.0.0.1:8088
+}
