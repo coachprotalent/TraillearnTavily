@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import unicodedata
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 import httpx
 
@@ -74,6 +75,36 @@ def _load_engines(env: dict[str, str] | None = None) -> str:
 
 _ENGINES: str = _load_engines()
 
+# Domaines « bruit » (réseaux sociaux / vidéo) jamais pertinents pour la découverte de
+# sources officielles : écartés des résultats. Le pool de moteurs maigre les remonte parfois
+# (ex. tiktok/instagram sur une requête pointue) ; on les filtre avant de répondre.
+_DEFAULT_BLOCKLIST = (
+    "tiktok.com", "instagram.com", "facebook.com", "twitter.com", "x.com",
+    "pinterest.com", "pinterest.fr", "youtube.com", "youtu.be",
+)
+
+
+def _load_blocklist(env: dict[str, str] | None = None) -> tuple[str, ...]:
+    """Domaines à exclure : défauts + surcharge env SEARCH_BLOCKLIST_DOMAINS (virgules)."""
+    e = env if env is not None else os.environ
+    raw = (e.get("SEARCH_BLOCKLIST_DOMAINS") or "").strip()
+    if not raw:
+        return _DEFAULT_BLOCKLIST
+    return tuple(d.strip().lower() for d in raw.split(",") if d.strip())
+
+
+_BLOCKLIST: tuple[str, ...] = _load_blocklist()
+
+
+def _is_blocked(url: str) -> bool:
+    try:
+        host = urlparse(url).hostname or ""
+    except ValueError:
+        return False
+    host = host.lower().removeprefix("www.")
+    return any(host == d or host.endswith("." + d) for d in _BLOCKLIST)
+
+
 # Réessais sur erreur TRANSITOIRE de l'appel à SearXNG (timeout / 5xx / réseau).
 _MAX_ATTEMPTS = 2
 
@@ -133,6 +164,8 @@ async def search_searxng(
         url = r.get("url")
         if not isinstance(url, str) or not url:
             continue
+        if _is_blocked(url):
+            continue  # bruit réseaux sociaux / vidéo
         score = r.get("score")
         if not isinstance(score, (int, float)):
             score = 1.0 - (i / total) if total else 1.0

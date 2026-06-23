@@ -144,6 +144,27 @@ async def test_retry_on_transient_error_then_success():
     assert len(hits) == 1
 
 
+async def test_blocklist_filters_social_noise():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": [
+            {"title": "Junk", "url": "https://www.tiktok.com/@x", "content": ""},
+            {"title": "Junk2", "url": "https://instagram.com/y", "content": ""},
+            {"title": "Bon", "url": "https://esiac.net/", "content": ""},
+        ]})
+
+    async with _client(handler) as client:
+        hits = await search_searxng(client, "http://searxng:8080", "ecoles cote d'ivoire", 10, None)
+
+    assert [h.url for h in hits] == ["https://esiac.net/"]
+
+
+def test_load_blocklist_env_override():
+    from app.searxng_client import _load_blocklist
+
+    assert _load_blocklist({"SEARCH_BLOCKLIST_DOMAINS": "foo.com, bar.org"}) == ("foo.com", "bar.org")
+    assert "tiktok.com" in _load_blocklist({})
+
+
 async def test_searxng_error_returns_empty():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(502)
