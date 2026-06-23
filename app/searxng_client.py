@@ -1,9 +1,19 @@
 from __future__ import annotations
 
 import os
+import unicodedata
 from dataclasses import dataclass
 
 import httpx
+
+
+def _fold_accents(text: str) -> str:
+    """Replie les accents (é→e, à→a…). L'instance SearXNG renvoie 0 résultat sur les
+    requêtes accentuées (« université » → 0, « universite » → résultats) ; les moteurs
+    sont de toute façon insensibles aux accents. Indispensable pour les requêtes FR."""
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)
+    )
 
 # Mapping nom-de-pays (anglais minuscule, comme passé par Traillearn) -> langue SearXNG.
 # SearXNG biaise la LANGUE, pas le pays : ce mapping ne suffit donc PAS à cibler un pays
@@ -78,7 +88,8 @@ async def search_searxng(
         language = _COUNTRY_TO_LANGUAGE.get(c.lower())
         if language:
             params["language"] = language
-    params["q"] = effective_query
+    # SearXNG ne renvoie rien sur les accents → on les replie (moteurs insensibles aux accents).
+    params["q"] = _fold_accents(effective_query)
 
     try:
         resp = await client.get(f"{searxng_url.rstrip('/')}/search", params=params)

@@ -56,6 +56,20 @@ async def test_country_maps_to_language():
     assert seen["language"] == "fr"
 
 
+async def test_query_accents_are_folded():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["q"] = request.url.params.get("q")
+        return httpx.Response(200, json={"results": []})
+
+    async with _client(handler) as client:
+        await search_searxng(client, "http://searxng:8080", "écoles ingénieur", 5, None)
+
+    # SearXNG renvoie 0 sur les accents → la requête envoyée est dépliée.
+    assert seen["q"] == "ecoles ingenieur"
+
+
 async def test_country_injected_into_query():
     seen = {}
 
