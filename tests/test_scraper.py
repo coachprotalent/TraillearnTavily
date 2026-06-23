@@ -1,5 +1,6 @@
 import httpx
 
+import app.scraper as scraper
 from app.scraper import extract_main_text, fetch_html, fetch_and_extract
 
 
@@ -51,6 +52,19 @@ async def test_fetch_and_extract_happy_path():
         text = await fetch_and_extract(client, "https://x.fr", 15000, 20000)
 
     assert "11 850 euros" in text
+
+
+async def test_fetch_and_extract_handles_pdf(monkeypatch):
+    # Un PDF (guide d'admission) est désormais accepté et son texte extrait.
+    monkeypatch.setattr(scraper, "extract_pdf_text", lambda content, max_chars: "TEXTE PDF EXTRAIT")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers={"content-type": "application/pdf"}, content=b"%PDF-1.4 ...")
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        text = await fetch_and_extract(client, "https://x.fr/guide.pdf", 15000, 20000)
+
+    assert text == "TEXTE PDF EXTRAIT"
 
 
 async def test_fetch_and_extract_returns_empty_on_network_error():

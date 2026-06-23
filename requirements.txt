@@ -4,4 +4,5 @@ httpx>=0.27
 trafilatura>=1.8
 readability-lxml>=0.8.1
 lxml>=5.0
+pypdf>=4.0
 pydantic>=2.6

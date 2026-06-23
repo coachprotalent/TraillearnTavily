@@ -56,6 +56,42 @@ async def test_country_maps_to_language():
     assert seen["language"] == "fr"
 
 
+async def test_country_injected_into_query():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["q"] = request.url.params.get("q")
+        return httpx.Response(200, json={"results": []})
+
+    async with _client(handler) as client:
+        await search_searxng(client, "http://searxng:8080", "ecoles", 5, "cameroon")
+
+    # Le nom du pays est ajouté aux termes (vrai biais géo), pas seulement la langue.
+    assert "cameroon" in seen["q"].lower()
+
+
+async def test_country_not_duplicated_if_already_in_query():
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["q"] = request.url.params.get("q")
+        return httpx.Response(200, json={"results": []})
+
+    async with _client(handler) as client:
+        await search_searxng(client, "http://searxng:8080", "ecoles cameroon", 5, "cameroon")
+
+    assert seen["q"].lower().count("cameroon") == 1
+
+
+def test_country_language_map_env_override():
+    from app.searxng_client import _load_country_to_language
+
+    mapping = _load_country_to_language({"SEARCH_COUNTRY_LANGUAGE": "brazil=pt, cameroon=en"})
+    assert mapping["brazil"] == "pt"
+    assert mapping["cameroon"] == "en"  # surcharge le défaut "fr"
+    assert mapping["france"] == "fr"     # défaut conservé
+
+
 async def test_searxng_error_returns_empty():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(502)

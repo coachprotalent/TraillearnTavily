@@ -10,6 +10,26 @@ def _cfg(**over):
     return load_config(env)
 
 
+async def test_search_depth_advanced_fetches_more_candidates():
+    seen = {}
+
+    async def search_fn(query, max_results, country):
+        seen["n"] = max_results
+        return []
+
+    async def scrape_fn(url):
+        return ""
+
+    # basic : n = max_results ; advanced : n ≈ 2× (plafonné à 50).
+    req_basic = SearchRequest(query="q", max_results=10, search_depth="basic", country=None)
+    await handle_search(req_basic, _cfg(), search_fn=search_fn, scrape_fn=scrape_fn)
+    assert seen["n"] == 10
+
+    req_adv = SearchRequest(query="q", max_results=10, search_depth="advanced", country=None)
+    await handle_search(req_adv, _cfg(), search_fn=search_fn, scrape_fn=scrape_fn)
+    assert seen["n"] == 20
+
+
 async def test_content_from_scrape_then_fallback_to_snippet():
     hits = [
         RawHit("A", "https://a.fr", "snippet a", 0.9),

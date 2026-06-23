@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import re
+from io import BytesIO
 
 import httpx
 import trafilatura
+from pypdf import PdfReader
 from readability import Document
 
 _ALLOWED_CONTENT_TYPES = ("text/html", "application/xhtml+xml")
+_PDF_CONTENT_TYPE = "application/pdf"
 _MAX_BODY_BYTES = 2 * 1024 * 1024  # 2 Mo
 _MIN_USEFUL = 200
 
@@ -88,10 +91,38 @@ async def fetch_html(
     return (True, resp.text, resp.status_code)
 
 
+def extract_pdf_text(content: bytes, max_chars: int) -> str:
+    """Extrait le texte d'un PDF (guides d'admission souvent en PDF). Best-effort :
+    renvoie "" si le PDF est illisible/chiffré, jamais d'exception."""
+    try:
+        reader = PdfReader(BytesIO(content))
+        parts = [(page.extract_text() or "") for page in reader.pages]
+    except Exception:
+        return ""
+    text = re.sub(r"\s+", " ", " ".join(parts)).strip()
+    return text[:max_chars]
+
+
 async def fetch_and_extract(
     client: httpx.AsyncClient, url: str, timeout_ms: int, max_chars: int
 ) -> str:
-    ok, html, _status = await fetch_html(client, url, timeout_ms)
-    if not ok or not html:
+    # Fetch unique, type-aware : HTML (extraction d'article) OU PDF (pypdf). Tout autre
+    # type ou erreur réseau → "" (best-effort, jamais d'exception).
+    try:
+        resp = await client.get(
+            url,
+            headers=_BROWSER_HEADERS,
+            timeout=timeout_ms / 1000,
+            follow_redirects=True,
+        )
+    except httpx.HTTPError:
         return ""
-    return extract_main_text(html, max_chars)
+    if resp.status_code >= 400:
+        return ""
+
+    content_type = (resp.headers.get("content-type") or "").lower()
+    if content_type.startswith(_PDF_CONTENT_TYPE):
+        return extract_pdf_text(resp.content, max_chars)
+    if not content_type or any(content_type.startswith(t) for t in _ALLOWED_CONTENT_TYPES):
+        return extract_main_text(resp.text, max_chars)
+    return ""

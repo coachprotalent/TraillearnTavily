@@ -34,7 +34,10 @@ async def handle_search(
     search_fn: SearchFn,
     scrape_fn: ScrapeFn,
 ) -> list[ResultItem]:
-    hits = await search_fn(req.query, req.max_results, req.country)
+    # search_depth : "advanced" récupère plus de candidats (≈2×, plafonné à 50) avant scraping
+    # — découverte plus exhaustive ; "basic" (défaut) reste économe.
+    n = min(req.max_results * 2, 50) if req.search_depth == "advanced" else req.max_results
+    hits = await search_fn(req.query, n, req.country)
     if not hits:
         return []
 
