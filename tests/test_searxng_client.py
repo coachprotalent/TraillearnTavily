@@ -106,6 +106,44 @@ def test_country_language_map_env_override():
     assert mapping["france"] == "fr"     # défaut conservé
 
 
+def test_load_engines_from_env():
+    from app.searxng_client import _load_engines
+
+    assert _load_engines({"SEARXNG_ENGINES": "google,brave"}) == "google,brave"
+    assert _load_engines({}) == ""
+
+
+async def test_engines_param_when_configured(monkeypatch):
+    import app.searxng_client as sc
+    monkeypatch.setattr(sc, "_ENGINES", "google,brave,startpage")
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["engines"] = request.url.params.get("engines")
+        return httpx.Response(200, json={"results": []})
+
+    async with _client(handler) as client:
+        await sc.search_searxng(client, "http://searxng:8080", "q", 5, None)
+
+    assert seen["engines"] == "google,brave,startpage"
+
+
+async def test_retry_on_transient_error_then_success():
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ConnectError("transient")
+        return httpx.Response(200, json={"results": [{"title": "A", "url": "https://a.fr", "content": ""}]})
+
+    async with _client(handler) as client:
+        hits = await search_searxng(client, "http://searxng:8080", "q", 5, None)
+
+    assert calls["n"] == 2          # 1 échec transitoire + 1 réessai réussi
+    assert len(hits) == 1
+
+
 async def test_searxng_error_returns_empty():
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(502)

@@ -62,6 +62,22 @@ def _load_country_to_language(env: dict[str, str] | None = None) -> dict[str, st
 _COUNTRY_TO_LANGUAGE: dict[str, str] = _load_country_to_language()
 
 
+def _load_engines(env: dict[str, str] | None = None) -> str:
+    """Liste de moteurs SearXNG à forcer (env SEARXNG_ENGINES, ex. "google,brave,startpage").
+
+    Vide = comportement par défaut de SearXNG (tous les moteurs de la catégorie). Permet de
+    privilégier les moteurs FIABLES (et d'écarter ceux fréquemment bloqués : CAPTCHA/429)
+    sans éditer settings.yml ni redéployer le code."""
+    e = env if env is not None else os.environ
+    return (e.get("SEARXNG_ENGINES") or "").strip()
+
+
+_ENGINES: str = _load_engines()
+
+# Réessais sur erreur TRANSITOIRE de l'appel à SearXNG (timeout / 5xx / réseau).
+_MAX_ATTEMPTS = 2
+
+
 @dataclass
 class RawHit:
     title: str
@@ -90,12 +106,24 @@ async def search_searxng(
             params["language"] = language
     # SearXNG ne renvoie rien sur les accents → on les replie (moteurs insensibles aux accents).
     params["q"] = _fold_accents(effective_query)
+    # Moteurs fiables forcés (env SEARXNG_ENGINES) pour écarter ceux fréquemment bloqués.
+    if _ENGINES:
+        params["engines"] = _ENGINES
 
-    try:
-        resp = await client.get(f"{searxng_url.rstrip('/')}/search", params=params)
-        resp.raise_for_status()
-        data = resp.json()
-    except (httpx.HTTPError, ValueError):
+    data = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            resp = await client.get(f"{searxng_url.rstrip('/')}/search", params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            break
+        except ValueError:
+            return []  # JSON invalide : pas de réessai
+        except httpx.HTTPError:
+            if attempt + 1 >= _MAX_ATTEMPTS:
+                return []  # erreur transitoire persistante → vide
+            continue       # réessai
+    if data is None:
         return []
 
     raw_results = data.get("results", []) if isinstance(data, dict) else []
