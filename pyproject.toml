@@ -1,3 +1,10 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [project]
 name = "traillearn-search"
 version = "0.1.0"
@@ -10,6 +17,7 @@ dependencies = [
     "trafilatura>=1.8",
     "readability-lxml>=0.8.1",
     "lxml>=5.0",
+    "pypdf>=4.0",
     "pydantic>=2.6",
 ]
 

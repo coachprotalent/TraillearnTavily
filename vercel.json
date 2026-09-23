@@ -1,0 +1,26 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "services": {
+    "api": {
+      "root": ".",
+      "framework": "fastapi",
+      "entrypoint": "app.server:app",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "searxng",
+          "format": "url",
+          "env": "SEARXNG_URL"
+        }
+      ]
+    },
+    "searxng": {
+      "root": "deploy/vercel/searxng",
+      "runtime": "container",
+      "entrypoint": "Dockerfile.vercel"
+    }
+  },
+  "rewrites": [
+    { "source": "/(.*)", "destination": { "service": "api" } }
+  ]
+}

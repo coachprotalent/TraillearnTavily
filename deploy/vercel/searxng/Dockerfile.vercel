@@ -1,0 +1,7 @@
+FROM searxng/searxng:2026.6.22-952896d29
+
+COPY settings.yml /etc/searxng/settings.yml
+COPY start.sh /opt/start-searxng.sh
+ENV SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
+EXPOSE 80
+ENTRYPOINT ["/bin/sh", "/opt/start-searxng.sh"]
