@@ -37,6 +37,8 @@ services:
       # Auth Bearer : vide = désactivée. Définir LOCAL_SEARCH_TOKEN dans .env
       # pour l'activer (recommandé si BIND_HOST=0.0.0.0).
       - LOCAL_SEARCH_TOKEN=${LOCAL_SEARCH_TOKEN:-}
+      # Moteurs SearXNG forcés par le service (vide = défaut SearXNG).
+      - SEARXNG_ENGINES=${SEARXNG_ENGINES:-}
     ports:
       # BIND_HOST=127.0.0.1 (défaut, sécurisé : accessible seulement depuis la VM).
       # Mettre BIND_HOST=0.0.0.0 dans .env pour exposer le service à d'autres

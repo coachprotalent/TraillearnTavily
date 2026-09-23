@@ -13,7 +13,19 @@ server:
   limiter: false
   image_proxy: false
 
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 20.0
+
 search:
   formats:
     - html
     - json
+
+engines:
+  - name: duckduckgo
+    disabled: true
+  - name: mojeek
+    disabled: false
+  - name: qwant
+    disabled: false
